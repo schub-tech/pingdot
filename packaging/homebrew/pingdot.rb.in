@@ -8,7 +8,7 @@ cask "pingdot" do
   desc "Menu bar dot that shows whether the internet works"
   homepage "https://www.schub.tech/labs/pingdot/"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "PingDot.app"
 

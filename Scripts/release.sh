@@ -67,7 +67,7 @@ if [ "$LANE" = github ]; then
   spctl --assess --type execute -vv build/PingDot.app
 
   SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
-  sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA/" \
+  sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA/" -e '/^# Template/d' \
     packaging/homebrew/pingdot.rb.in > packaging/homebrew/pingdot.rb
 
   commit "$PLIST" packaging/homebrew/pingdot.rb

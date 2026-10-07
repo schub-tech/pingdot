@@ -1,0 +1,8 @@
+.build/
+build/
+Resources/AppIcon.icns
+.DS_Store
+*.xcodeproj
+*.xcworkspace
+.release.env
+Resources/*.provisionprofile

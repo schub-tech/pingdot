@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required for the Mac App Store. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- PingDot never listens on a port. Inside the sandbox, though, the unprivileged
+	     ICMP datagram socket only *receives* echo replies with this entitlement:
+	     without it the pings go out and nothing comes back (100 % loss). -->
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

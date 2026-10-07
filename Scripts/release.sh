@@ -45,6 +45,21 @@ NOTES="$(awk -v v="$VERSION" '
   on { print }' CHANGELOG.md)"
 [ -n "$NOTES" ] || die "no '## $VERSION' section in CHANGELOG.md"
 
+# The repo may live in an iCloud-synced folder (~/Documents, ~/Desktop). iCloud
+# tags the bundle with Finder info after signing, productbuild packs that into the
+# .pkg, and App Store Connect rejects it ("resource fork, Finder information, or
+# similar detritus not allowed", ITMS-90303). So everything we ship is copied to
+# a temp folder without extended attributes first, and checked there.
+stage_app() {
+  STAGE="$(mktemp -d /tmp/pingdot-release.XXXXXX)"
+  ditto --noextattr --norsrc build/PingDot.app "$STAGE/PingDot.app"
+  if xattr -lr "$STAGE/PingDot.app" | grep -v 'com.apple.provenance' | grep -q .; then
+    die "extended attributes left on the staged app: $STAGE/PingDot.app"
+  fi
+  codesign --verify --strict --deep "$STAGE/PingDot.app"
+  APP="$STAGE/PingDot.app"
+}
+
 commit() {
   git add "$@"
   git commit -q -m "Release $VERSION ($BUILD, $LANE)"
@@ -53,18 +68,19 @@ commit() {
 # --- GitHub: Developer ID + notarization -----------------------------------
 if [ "$LANE" = github ]; then
   SIGN_ID="${DEVELOPER_ID:-Developer ID Application}" ./Scripts/build-app.sh release
+  stage_app
 
   ZIP="build/PingDot-$VERSION.zip"
   rm -f "$ZIP"
-  ditto -c -k --sequesterRsrc --keepParent build/PingDot.app "$ZIP"
+  ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ZIP"
   echo "→ notarizing (takes a few minutes)"
   xcrun notarytool submit "$ZIP" --key "$ASC_KEY_PATH" --key-id "$ASC_KEY_ID" \
     --issuer "$ASC_ISSUER_ID" --wait
-  xcrun stapler staple build/PingDot.app
+  xcrun stapler staple "$APP"
   # Zip again so the download carries the stapled ticket (works offline).
   rm -f "$ZIP"
-  ditto -c -k --sequesterRsrc --keepParent build/PingDot.app "$ZIP"
-  spctl --assess --type execute -vv build/PingDot.app
+  ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ZIP"
+  spctl --assess --type execute -vv "$APP"
 
   SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
   sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA/" -e '/^# Template/d' \
@@ -99,9 +115,18 @@ if [ "$LANE" = appstore ]; then
     die "update checker found in the App Store build"
   fi
 
+  stage_app
   PKG="build/PingDot-$VERSION.pkg"
-  productbuild --component build/PingDot.app /Applications \
+  productbuild --component "$APP" /Applications \
     --sign "${INSTALLER_ID:-3rd Party Mac Developer Installer}" "$PKG"
+
+  # Unpack the package and look again — this is what App Store Connect re-signs.
+  CHECK="$(mktemp -d /tmp/pingdot-pkgcheck.XXXXXX)"
+  pkgutil --expand-full "$PKG" "$CHECK/pkg"
+  if xattr -lr "$CHECK/pkg" | grep -v 'com.apple.provenance' | grep -q .; then
+    die "extended attributes inside $PKG (see $CHECK/pkg)"
+  fi
+  codesign --verify --strict --deep "$CHECK"/pkg/*/Payload/PingDot.app
 
   echo "→ uploading to App Store Connect"
   xcrun altool --upload-app --type macos -f "$PKG" \

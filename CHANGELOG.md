@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — unreleased
+## 0.1.2 — 2026-10-08
 
 - Fix: PingDot quit without a word when the network changed (Wi‑Fi switch,
   hotspot, VPN). Writing to a ping socket the system had closed raised SIGPIPE;

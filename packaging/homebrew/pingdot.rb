@@ -1,6 +1,6 @@
 cask "pingdot" do
-  version "0.1.1"
-  sha256 "f1e36588f131b7d150453c1573d6b505590d649c8d60549b50e68b498125b1e7"
+  version "0.1.2"
+  sha256 "157d44d6696af5217e937d37edd1b8879bda4a08b3fa265f1ce9ae2e73ebef59"
 
   url "https://github.com/schub-tech/pingdot/releases/download/v#{version}/PingDot-#{version}.zip"
   name "PingDot"

@@ -7,10 +7,7 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<!-- PingDot never listens on a port. Inside the sandbox, though, the unprivileged
-	     ICMP datagram socket only *receives* echo replies with this entitlement:
-	     without it the pings go out and nothing comes back (100 % loss). -->
-	<key>com.apple.security.network.server</key>
-	<true/>
+	<!-- Enough for ICMP too: the ping socket is connect()ed to its target, so the
+	     sandbox treats the echo replies as answers to our own outgoing packets. -->
 </dict>
 </plist>

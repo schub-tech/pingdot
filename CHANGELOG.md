@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.1 — unreleased
+
+- The ping socket is connected to its target. The App Store build no longer
+  needs the network server entitlement, and replies to other apps' pings no
+  longer reach PingDot.
+
+## 0.1.0 — 2026-10-07
 
 First public release.
 

@@ -54,7 +54,9 @@ downloads keep working). Apple Distribution is the older one from 2026-09-13
 - Sandboxed ICMP still works: build with a real identity
   (`SIGN_ID="Apple Development" ./Scripts/build-app.sh`) and run
   `build/PingDot.app/Contents/MacOS/PingDot --selftest 1.1.1.1` — ICMP must say
-  "works". Without `com.apple.security.network.server` the replies never arrive.
+  "works". This relies on the ICMP socket being `connect()`ed to its target; an
+  unconnected socket only receives replies with `network.server`, which App
+  Review rejects for apps that don't listen (2026-10-08).
 - Click through the menu once: targets, method switch, Copy diagnostics, About.
 - Add a `## <version>` section to `CHANGELOG.md` — it becomes the release notes.
 
@@ -72,8 +74,5 @@ Connect pick the uploaded build and submit it for review.
 
 Paste this into *App Review Information → Notes*:
 
-> PingDot shows internet connectivity as a dot in the menu bar. It sends ICMP
-> echo requests over an unprivileged datagram socket (SOCK_DGRAM / IPPROTO_ICMP).
-> Inside the App Sandbox, receiving the echo replies on that socket requires
-> com.apple.security.network.server. PingDot does not open a listening port and
-> does not accept incoming connections.
+> PingDot shows internet connectivity as a dot in the menu bar. No account or
+> login is needed. Click the dot in the menu bar to see the details.

@@ -6,7 +6,7 @@ import Foundation
 /// Uses an unprivileged ICMP datagram socket (`SOCK_DGRAM`/`IPPROTO_ICMP`), the same
 /// trick Apple's SimplePing uses — no root, no `setuid`, no subprocess per ping.
 /// One socket stays open for the lifetime of the pinger, so a probe costs a single
-/// `sendto` and the reply arrives on a dispatch read source. That is what keeps the
+/// `send` and the reply arrives on a dispatch read source. That is what keeps the
 /// dot responsive: no process spawn, no parsing, no polling.
 ///
 /// IPv4 only. For IPv6-only networks (or networks that drop ICMP) use `TCPProbe`.
@@ -20,6 +20,11 @@ final class ICMPPinger: Probe {
     private var pending: [UInt16: DispatchTime] = [:]
     private var isStopped = false
     private var isResolving = false
+    /// The socket is `connect`ed to the target. The App Sandbox treats replies on an
+    /// unconnected ICMP socket as inbound traffic (they only arrive with the
+    /// network.server entitlement); bound to one peer they count as replies to our
+    /// own outgoing packets and `network.client` is enough.
+    private var isConnected = false
 
     /// Random per-pinger token echoed back in the payload. Lets us ignore replies
     /// that belong to another socket (or another app) without relying on the ICMP
@@ -151,7 +156,9 @@ final class ICMPPinger: Probe {
             return
         }
 
+        let moved = resolved.sin_addr.s_addr != address.sin_addr.s_addr
         address = resolved
+        if moved { isConnected = false }
         if fd < 0 { openSocket() }
         if !isLiteralAddress { scheduleResolve(after: Self.reresolveInterval) }
     }
@@ -187,8 +194,20 @@ final class ICMPPinger: Probe {
 
     // MARK: - Sending
 
+    /// Fails while there is no route (Wi‑Fi off); `sendOne` simply tries again.
+    private func connectIfNeeded() {
+        guard !isConnected, fd >= 0 else { return }
+        let result = withUnsafePointer(to: &address) { addrPtr in
+            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        isConnected = result == 0
+    }
+
     private func sendOne() {
         guard fd >= 0 else { return }
+        connectIfNeeded()
         sequence &+= 1
         let seq = sequence
         let packet = makeEchoRequest(sequence: seq)
@@ -196,7 +215,8 @@ final class ICMPPinger: Probe {
         pending[seq] = .now()
 
         let sent: Int = packet.withUnsafeBytes { raw -> Int in
-            withUnsafePointer(to: &address) { addrPtr -> Int in
+            guard !isConnected else { return send(fd, raw.baseAddress, raw.count, 0) }
+            return withUnsafePointer(to: &address) { addrPtr -> Int in
                 addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa -> Int in
                     sendto(fd, raw.baseAddress, raw.count, 0, sa,
                            socklen_t(MemoryLayout<sockaddr_in>.size))
@@ -206,6 +226,8 @@ final class ICMPPinger: Probe {
 
         if sent < 0 {
             // No route to host, interface down, … — that is a loss, not a crash.
+            // Connect again on the next probe, the network may have changed under us.
+            isConnected = false
             sendErrorCount += 1
             lastSendError = "\(String(cString: strerror(errno))) [\(errno)]"
             pending.removeValue(forKey: seq)

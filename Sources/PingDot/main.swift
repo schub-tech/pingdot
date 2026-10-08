@@ -6,6 +6,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem.install()
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        statusItem.shutdown()   // writes the history to disk
+    }
 }
 
 // `PingDot --selftest [host …]` runs the probes headless for a few seconds and

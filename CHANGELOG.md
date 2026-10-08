@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## Unreleased
+
+- *Connection history…* in the menu: the last 1, 6 or 24 hours as a chart —
+  latency, and when the connection was good, unstable or down. Hover for the
+  details of any minute. "How was the Wi‑Fi on the train?" now has an answer.
+  The history stays on your Mac (one small file, older than 24 hours is deleted).
+
+## 0.1.1 — 2026-10-08
 
 - The ping socket is connected to its target. The App Store build no longer
   needs the network server entitlement, and replies to other apps' pings no

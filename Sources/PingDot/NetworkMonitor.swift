@@ -84,6 +84,10 @@ final class NetworkMonitor {
     private(set) var state = State()
     var onChange: ((State) -> Void)?
 
+    /// The last 24 hours, for the history window.
+    let history = History()
+    private var historyTimer: Timer?
+
     private var probes: [Probe] = []
     /// Bumped on every restart. Results already queued by a stopped probe carry
     /// the old value and are dropped — they would otherwise land in the slot of
@@ -124,6 +128,20 @@ final class NetworkMonitor {
 
         restartProbes()
 
+        // Once a second, whatever the probe interval: the history counts seconds.
+        // `.common` keeps it ticking while the menu is open.
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            // Skip the warm-up after launch or a network change: the dot is yellow
+            // until enough replies are in, which says nothing about the connection.
+            let warm = self.state.hosts.contains { $0.recent.count >= Settings.shared.greenWindow }
+            if warm || self.state.health == .red {
+                self.history.tick(health: self.state.health)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        historyTimer = timer
+
         Settings.shared.onProbeChange = { [weak self] in self?.restartProbes() }
     }
 
@@ -132,6 +150,8 @@ final class NetworkMonitor {
         probes.removeAll()
         diagnostics.stop()
         pathMonitor.cancel()
+        historyTimer?.invalidate()
+        history.save(sync: true)
     }
 
     /// Internal probe counters per target, in `state.hosts` order.
@@ -177,6 +197,7 @@ final class NetworkMonitor {
         guard state.hosts.indices.contains(index) else { return }
 
         state.hosts[index].recent.append(Sample(ok: ok, rtt: rtt))
+        history.addProbe(host: state.hosts[index].host, ok: ok, rtt: rtt)
         let overflow = state.hosts[index].recent.count - Self.historyLimit
         if overflow > 0 { state.hosts[index].recent.removeFirst(overflow) }
         if ok {

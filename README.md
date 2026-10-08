@@ -84,6 +84,12 @@ under the headline names the likely cause, for example *"Router reachable,
 internet not — provider outage or Wi‑Fi login page?"* or *"Wi‑Fi is off or the
 cable is unplugged"*.
 
+*Connection history…* opens a chart of the last 1, 6 or 24 hours: latency as a
+line, and underneath a strip showing when the connection was good, unstable or
+down — grey where the Mac was asleep. Hover over it for the minute-by-minute
+details. Handy after a train ride or a flaky video call. The history is kept in
+a small file on your Mac and nothing older than 24 hours is kept.
+
 ## Settings
 
 Everything lives in the menu under *Settings*:
@@ -119,7 +125,7 @@ No tracking, no analytics, no account. PingDot talks to the targets you
 configure (1.1.1.1 and 8.8.8.8 by default), your router, and `www.apple.com`
 for the DNS and HTTPS checks. The GitHub and Homebrew version also asks GitHub
 once a day whether there is a newer release; you can turn that off. Settings
-stay on your Mac. Details in the [privacy policy](PRIVACY_POLICY.md).
+and the 24-hour connection history stay on your Mac. Details in the [privacy policy](PRIVACY_POLICY.md).
 
 ## Build from source
 
@@ -154,6 +160,8 @@ switch to *Settings → Method → TCP connect*.
 | `ICMPPinger.swift` | ICMP echo over an unprivileged datagram socket |
 | `TCPProbe.swift` | Fallback: times a TCP handshake |
 | `NetworkMonitor.swift` | History, traffic-light logic, link state |
+| `History.swift` | Per-minute record of the last 24 hours, saved to disk |
+| `HistoryWindow.swift` | *Connection history…* window (SwiftUI + Charts) |
 | `Diagnostics.swift` | Router, DNS and HTTPS checks |
 | `StatusItemController.swift` | Menu bar item and menu |
 | `StatusIcon.swift` | Draws the dot and the sparkline |

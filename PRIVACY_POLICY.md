@@ -7,7 +7,8 @@ of charge and as is.
 
 PingDot does not collect, store or share any personal data. There is no account,
 no analytics, no tracking and no crash reporting. Settings are stored only on
-your Mac.
+your Mac, and so is the connection history (latency and outages of the last 24
+hours, for the *Connection history* window). It never leaves your Mac.
 
 ## Network connections
 

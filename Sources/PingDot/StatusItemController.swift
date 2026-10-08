@@ -14,6 +14,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private weak var subtitleItem: NSMenuItem?
     private var hostRowItems: [(spark: NSMenuItem, stats: NSMenuItem)] = []
     private var diagnosticItems: [NSMenuItem] = []
+    private lazy var historyWindow = HistoryWindowController(history: monitor.history)
     #if !APP_STORE
     private let updates = UpdateChecker()
     #endif
@@ -32,6 +33,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // The menu is rebuilt on every open, so the next open shows the line.
         updates.start()
         #endif
+    }
+
+    func shutdown() {
+        monitor.stop()
     }
 
     // MARK: - Menu bar button
@@ -196,6 +201,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         diagnosticItems.forEach(menu.addItem)
 
         menu.addItem(.separator())
+        menu.addItem(item("Connection history…", #selector(showHistory)))
         menu.addItem(item("Copy diagnostics", #selector(copyDiagnostics)))
         menu.addItem(item("Restart monitoring", #selector(restart)))
 
@@ -449,6 +455,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private static let websiteURL = URL(string: "https://www.schub.tech/labs/pingdot/")!
+
+    @objc private func showHistory() {
+        historyWindow.show()
+    }
 
     @objc private func restart() {
         monitor.restartProbes()

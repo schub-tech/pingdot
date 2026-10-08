@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.1.2 — unreleased
+
+- Fix: PingDot quit without a word when the network changed (Wi‑Fi switch,
+  hotspot, VPN). Writing to a ping socket the system had closed raised SIGPIPE;
+  the app now ignores it and opens a fresh socket.
+
+## 0.1.1 — 2026-10-08
 
 - The ping socket is connected to its target. The App Store build no longer
   needs the network server entitlement, and replies to other apps' pings no

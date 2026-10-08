@@ -7,6 +7,12 @@
   details of any minute. "How was the Wi‑Fi on the train?" now has an answer.
   The history stays on your Mac (one small file, older than 24 hours is deleted).
 
+## 0.1.2 — 2026-10-08
+
+- Fix: PingDot quit without a word when the network changed (Wi‑Fi switch,
+  hotspot, VPN). Writing to a ping socket the system had closed raised SIGPIPE;
+  the app now ignores it and opens a fresh socket.
+
 ## 0.1.1 — 2026-10-08
 
 - The ping socket is connected to its target. The App Store build no longer

@@ -174,10 +174,16 @@ final class ICMPPinger: Probe {
             return
         }
         fd = socketFD
+        isConnected = false
 
         // Non-blocking: the read source tells us when data is there, we never want
         // recvfrom to park the queue.
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        // When the network changes, macOS can tear down a connected socket under
+        // us. Sending on it must report EPIPE, not deliver SIGPIPE — whose default
+        // action quits the app without a word.
+        var on: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
 
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.drainSocket() }
@@ -185,11 +191,23 @@ final class ICMPPinger: Probe {
         readSource = source
         source.resume()
 
+        guard timer == nil else { return }
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(10))
         t.setEventHandler { [weak self] in self?.sendOne() }
         timer = t
         t.resume()
+    }
+
+    private func reopenSocket() {
+        if let source = readSource {
+            readSource = nil
+            source.cancel()   // its cancel handler closes the old fd
+        } else if fd >= 0 {
+            close(fd)
+        }
+        fd = -1
+        openSocket()
     }
 
     // MARK: - Sending
@@ -227,9 +245,12 @@ final class ICMPPinger: Probe {
         if sent < 0 {
             // No route to host, interface down, … — that is a loss, not a crash.
             // Connect again on the next probe, the network may have changed under us.
+            let error = errno
             isConnected = false
             sendErrorCount += 1
-            lastSendError = "\(String(cString: strerror(errno))) [\(errno)]"
+            lastSendError = "\(String(cString: strerror(error))) [\(error)]"
+            // A socket macOS has shut down stays dead; start over with a fresh one.
+            if [EPIPE, ENOTCONN, ECONNRESET, EBADF].contains(error) { reopenSocket() }
             pending.removeValue(forKey: seq)
             report(success: false, rtt: nil)
             return

@@ -1,5 +1,9 @@
 import AppKit
 
+// A write to a socket the system has closed must fail with EPIPE, not end the
+// app: SIGPIPE's default action quits silently, without a crash report.
+signal(SIGPIPE, SIG_IGN)
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = StatusItemController()
 

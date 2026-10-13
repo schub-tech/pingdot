@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- New popover on a click on the dot: latency as the big number, a chart of the
+  last minute, one tile per target and the four checks at a glance. The menu with
+  Settings, About and Quit is now on right click (or control click), and the
+  settings button in the popover opens the same settings.
+- The router check shows its latency.
+- The dot is plain white (black on a light menu bar) while everything is fine and
+  only takes a colour when something is wrong.
+- Less work in the background: the menu bar item is only redrawn when it actually
+  changes, which lowers the idle CPU use. In Low Power Mode the
+  popover drops its repeating animations.
+- `./Scripts/test.sh` checks the logic and measures the CPU use against a budget.
+
 ## 0.1.2 — 2026-10-08
 
 - Fix: PingDot quit without a word when the network changed (Wi‑Fi switch,

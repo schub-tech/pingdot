@@ -1,11 +1,18 @@
 import AppKit
 import ServiceManagement
 
-/// The menu bar item: the dot itself plus the drop-down with the details.
+/// The menu bar item: the dot itself, the popover on a click and the menu on a
+/// right click.
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor = NetworkMonitor()
     private let menu = NSMenu()
+    private let popover = PopoverController()
+    /// What `render` drew last — the monitor's state, or a simulated one.
+    private var latest = NetworkMonitor.State()
+    #if DEBUG
+    private var fakeFeed: FakeFeed?
+    #endif
 
     // Kept around so an open menu can be refreshed in place instead of rebuilt —
     // swapping items out from under an open menu makes it flicker.
@@ -22,11 +29,45 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         menu.delegate = self
-        statusItem.menu = menu
+        // No `statusItem.menu`: that would swallow every click. The menu is attached
+        // just for the duration of a right click, see `statusItemClicked`.
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+        popover.model.copyDiagnostics = { [weak self] in self?.copyDiagnostics() }
+        popover.model.showSettings = { [weak self] in self?.showSettingsFromPopover() }
+        #if !APP_STORE
+        popover.model.openUpdate = { [weak self] in self?.openReleasePage() }
+        #endif
+
+        #if DEBUG
+        if let feed = FakeFeed() {
+            feed.onChange = { [weak self] state in self?.render(state) }
+            feed.start()
+            fakeFeed = feed
+            render(feed.state)
+            // Open by itself once the item has its place in the menu bar.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, let button = self.statusItem.button else { return }
+                self.popover.pinned = true
+                self.fillPopover(self.latest, opening: true)
+                self.popover.show(under: button)
+            }
+            // PINGDOT_SNAPSHOT=/path/to.png saves the settled popover and quits.
+            if let path = ProcessInfo.processInfo.environment["PINGDOT_SNAPSHOT"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+                    self?.popover.writeSnapshot(to: path)
+                    NSApp.terminate(nil)
+                }
+            }
+            return
+        }
+        #endif
 
         monitor.onChange = { [weak self] state in self?.render(state) }
         monitor.start()
-        render(monitor.state)
+        render(latest)
 
         #if !APP_STORE
         // The menu is rebuilt on every open, so the next open shows the line.
@@ -36,28 +77,66 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: - Menu bar button
 
-    private func render(_ state: NetworkMonitor.State) {
+    @objc private func statusItemClicked() {
         guard let button = statusItem.button else { return }
-        button.image = StatusIcon.image(for: state.health, monochrome: Settings.shared.monochrome)
-
-        if Settings.shared.showLatency, state.health != .red, let rtt = state.bestRTT {
-            button.title = " \(Int((rtt * 1000).rounded())) ms"
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            popover.close()
+            statusItem.menu = menu
+            button.performClick(nil)   // returns once the menu is closed
+            statusItem.menu = nil
         } else {
-            button.title = ""
+            fillPopover(latest, opening: true)   // a closed popover gets no updates
+            popover.toggle(under: button)
         }
+    }
 
-        button.toolTip = [headline(for: state), subtitle(for: state)]
+    /// The Settings submenu of the menu, hanging under the popover's settings button.
+    private func showSettingsFromPopover() {
+        guard let origin = popover.settingsMenuOrigin,
+              let submenu = settingsMenu(Settings.shared).submenu else { return }
+        popover.isTrackingMenu = true
+        submenu.popUp(positioning: nil, at: origin, in: nil)
+        popover.isTrackingMenu = false
+    }
+
+    private func render(_ state: NetworkMonitor.State) {
+        latest = state
+        guard let button = statusItem.button else { return }
+        // This runs for every probe result, several times a second. Most of the time
+        // nothing visible changed, and an untouched button costs no redraw.
+        let image = StatusIcon.image(for: state.health, monochrome: Settings.shared.monochrome)
+        if button.image !== image { button.image = image }
+
+        var title = ""
+        if Settings.shared.showLatency, state.health != .red, let rtt = state.bestRTT {
+            title = " \(Int((rtt * 1000).rounded())) ms"
+        }
+        if button.title != title { button.title = title }
+
+        let toolTip = [StatePresenter.headline(for: state), StatePresenter.subtitle(for: state)]
             .compactMap { $0 }
             .joined(separator: " — ")
+        if button.toolTip != toolTip { button.toolTip = toolTip }
 
         if menuIsOpen { refreshLiveItems(state) }
+
+        fillPopover(state)
+    }
+
+    private func fillPopover(_ state: NetworkMonitor.State, opening: Bool = false) {
+        #if APP_STORE
+        popover.update(state, updateVersion: nil, opening: opening)
+        #else
+        popover.update(state, updateVersion: updates.availableVersion, opening: opening)
+        #endif
     }
 
     /// Update the handful of items that change every second while the menu is open.
     private func refreshLiveItems(_ state: NetworkMonitor.State) {
-        headerItem?.title = headline(for: state)
+        headerItem?.title = StatePresenter.headline(for: state)
         headerItem?.image = StatusIcon.image(for: state.health, monochrome: Settings.shared.monochrome)
-        let sub = subtitle(for: state) ?? ""
+        let sub = StatePresenter.subtitle(for: state) ?? ""
         subtitleItem?.attributedTitle = secondaryText(sub)
         subtitleItem?.isHidden = sub.isEmpty
 
@@ -73,63 +152,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             hostRowItems[index].spark.attributedTitle = hostSparkline(host)
             hostRowItems[index].stats.attributedTitle = secondaryText(statsLine(host))
         }
-    }
-
-    private func headline(for state: NetworkMonitor.State) -> String {
-        if !state.linkUp { return "No network connection" }
-        switch state.health {
-        case .green:
-            if let rtt = state.bestRTT { return "Internet OK — \(format(rtt))" }
-            return "Internet OK"
-        case .yellow:
-            switch state.degradation {
-            case .pingBlocked: return "Internet OK — ping is blocked here"
-            case .dnsFailing: return "DNS is failing"
-            case .webBlocked: return "Websites unreachable"
-            case .none: return "Unstable — losing packets"
-            }
-        case .red:
-            if let since = state.downSince {
-                return "Internet down for \(duration(since: since))"
-            }
-            return "Internet down"
-        case .unknown:
-            return "Checking…"
-        }
-    }
-
-    /// The line under the headline: either what is broken, or which single target
-    /// is unhappy while the connection as a whole is fine.
-    private func subtitle(for state: NetworkMonitor.State) -> String? {
-        // The diagnostics verdicts assume a network to diagnose.
-        if !state.linkUp { return "Wi‑Fi is off or the cable is unplugged" }
-
-        switch state.degradation {
-        case .pingBlocked: return "Switch Settings → Method to TCP connect"
-        case .dnsFailing: return "Websites won't load, but ping gets through"
-        case .webBlocked: return "Ping works, HTTPS doesn't — Wi‑Fi login page or firewall?"
-        case .none: break
-        }
-
-        if state.health == .red {
-            switch state.diagnostics.gatewayReachable {
-            case false?: return "Router unreachable — check Wi‑Fi / cable"
-            case true?: return "Router reachable, internet not — provider outage or Wi‑Fi login page?"
-            case nil: break
-            }
-        }
-
-        let unreachable = state.unreachableHosts
-        if state.health == .green && !unreachable.isEmpty {
-            return "\(unreachable.joined(separator: ", ")) unreachable — but you are online"
-        }
-
-        // A setup problem (bad hostname, no ICMP socket) is worth surfacing.
-        if let error = state.hosts.compactMap(\.lastError).first,
-           state.hosts.allSatisfy({ $0.recent.isEmpty }) {
-            return error
-        }
-        return nil
     }
 
     // MARK: - Menu
@@ -148,20 +170,20 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func rebuildMenu() {
-        let state = monitor.state
+        let state = latest
         let settings = Settings.shared
         menu.removeAllItems()
         hostRowItems.removeAll()
 
         // Headline with the dot repeated, so the state is obvious once the menu
         // covers the icon.
-        let header = NSMenuItem(title: headline(for: state), action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: StatePresenter.headline(for: state), action: nil, keyEquivalent: "")
         header.image = StatusIcon.image(for: state.health, monochrome: settings.monochrome)
         header.isEnabled = false
         menu.addItem(header)
         headerItem = header
 
-        let subText = subtitle(for: state) ?? ""
+        let subText = StatePresenter.subtitle(for: state) ?? ""
         let sub = disabled(subText, secondary: true)
         sub.isHidden = subText.isEmpty
         menu.addItem(sub)
@@ -314,9 +336,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let stats = host.stats()
         guard stats.count > 0 else { return "           waiting for first reply…" }
         var parts: [String] = []
-        if let average = stats.average { parts.append("avg \(format(average))") }
+        if let average = stats.average { parts.append("avg \(StatePresenter.format(average))") }
         if let minimum = stats.minimum, let maximum = stats.maximum {
-            parts.append("min \(format(minimum)) / max \(format(maximum))")
+            parts.append("min \(StatePresenter.format(minimum)) / max \(StatePresenter.format(maximum))")
         }
         parts.append(String(format: "loss %.0f%%", stats.lossPercent))
         return "           " + parts.joined(separator: "  ·  ")
@@ -367,6 +389,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func addCustomHost() {
+        popover.close()   // it floats above alerts
         let alert = NSAlert()
         alert.messageText = "Add ping target"
         alert.informativeText = "Hostname or IP address to check in parallel."
@@ -396,12 +419,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func toggleLatency() {
         Settings.shared.showLatency.toggle()
-        render(monitor.state)
+        render(latest)
     }
 
     @objc private func toggleMonochrome() {
         Settings.shared.monochrome.toggle()
-        render(monitor.state)
+        render(latest)
     }
 
     @objc private func toggleLaunchAtLogin() {
@@ -412,6 +435,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 try SMAppService.mainApp.register()
             }
         } catch {
+            popover.close()
             let alert = NSAlert()
             alert.messageText = "Could not change the login item"
             alert.informativeText = "\(error.localizedDescription)\n\nThis usually works only once PingDot lives in /Applications."
@@ -455,15 +479,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func copyDiagnostics() {
-        let state = monitor.state
+        let state = latest
         let settings = Settings.shared
         let diagnostics = state.diagnostics
 
         var lines = [
             "PingDot diagnostics — \(ISO8601DateFormatter().string(from: Date()))",
-            "State: \(headline(for: state))",
+            "State: \(StatePresenter.headline(for: state))",
         ]
-        if let subtitle = subtitle(for: state) { lines.append("Note: \(subtitle)") }
+        if let subtitle = StatePresenter.subtitle(for: state) { lines.append("Note: \(subtitle)") }
         lines.append("Method: \(settings.probeMode == .icmp ? "ICMP" : "TCP")"
                      + " every \(settings.interval) s (timeout \(settings.timeout) s)")
         lines.append("")
@@ -474,9 +498,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             var line = "\(host.host): \(host.health)"
             if stats.count > 0 {
                 line += ", \(stats.count) samples, loss \(String(format: "%.1f", stats.lossPercent)) %"
-                if let average = stats.average { line += ", avg \(format(average))" }
+                if let average = stats.average { line += ", avg \(StatePresenter.format(average))" }
                 if let minimum = stats.minimum, let maximum = stats.maximum {
-                    line += ", min \(format(minimum)), max \(format(maximum))"
+                    line += ", min \(StatePresenter.format(minimum)), max \(StatePresenter.format(maximum))"
                 }
             }
             if let error = host.lastError { line += ", error: \(error)" }
@@ -499,19 +523,5 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func mark(_ value: Bool?) -> String {
         guard let value else { return "unknown" }
         return value ? "ok" : "FAIL"
-    }
-
-    // MARK: - Formatting
-
-    private func format(_ rtt: TimeInterval) -> String {
-        let ms = rtt * 1000
-        return ms < 10 ? String(format: "%.1f ms", ms) : "\(Int(ms.rounded())) ms"
-    }
-
-    private func duration(since date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
-        if seconds < 60 { return "\(seconds) s" }
-        if seconds < 3600 { return "\(seconds / 60) min" }
-        return String(format: "%d h %d min", seconds / 3600, (seconds % 3600) / 60)
     }
 }

@@ -10,6 +10,8 @@ final class Diagnostics {
     struct Snapshot {
         var gatewayAddress: String?
         var gatewayReachable: Bool?
+        /// Round trip of the last answered router ping.
+        var gatewayRTT: TimeInterval?
         /// `false` only after two failed rounds in a row — right after (re)joining a
         /// network the first lookup often fails before DHCP/DNS have settled.
         var dnsWorking: Bool?
@@ -81,20 +83,23 @@ final class Diagnostics {
         guard address != snapshot.gatewayAddress else { return }
         snapshot.gatewayAddress = address
         snapshot.gatewayReachable = nil
+        snapshot.gatewayRTT = nil
         gatewayPinger?.stop()
         gatewayPinger = nil
 
         if let address {
             let pinger = ICMPPinger(host: address, interval: 5, timeout: 1.5)
             // Ignore answers still queued from the previous router's pinger.
-            pinger.onResult = { [weak self, weak pinger] ok, _ in
+            pinger.onResult = { [weak self, weak pinger] ok, rtt in
                 guard let self, let pinger, self.gatewayPinger === pinger else { return }
                 self.snapshot.gatewayReachable = ok
+                self.snapshot.gatewayRTT = ok ? rtt : nil
                 self.publish()
             }
             pinger.onFailure = { [weak self, weak pinger] _ in
                 guard let self, let pinger, self.gatewayPinger === pinger else { return }
                 self.snapshot.gatewayReachable = nil
+                self.snapshot.gatewayRTT = nil
                 self.publish()
             }
             gatewayPinger = pinger

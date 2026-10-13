@@ -20,6 +20,11 @@ if let flag = CommandLine.arguments.firstIndex(of: "--selftest") {
     SelfTest.run(hosts: explicit.isEmpty ? Settings.shared.hosts : explicit)
 }
 
+#if DEBUG
+// `PingDot --check` runs the tests, see Checks.swift and Scripts/test.sh.
+if CommandLine.arguments.contains("--check") { Checks.run() }
+#endif
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

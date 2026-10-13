@@ -26,9 +26,22 @@ enum StatusIcon {
     private static func dotImage(for health: Health) -> NSImage {
         let side: CGFloat = 16
         let diameter: CGFloat = 11
+        let rect = NSRect(x: (side - diameter) / 2, y: (side - diameter) / 2,
+                          width: diameter, height: diameter)
+
+        // All is well: a plain dot in the menu bar's own text colour — white on a
+        // dark menu bar, black on a light one. Colour is kept for trouble.
+        if health == .green {
+            let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+                NSColor.black.setFill()
+                NSBezierPath(ovalIn: rect).fill()
+                return true
+            }
+            image.isTemplate = true
+            return image
+        }
+
         let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
-            let rect = NSRect(x: (side - diameter) / 2, y: (side - diameter) / 2,
-                              width: diameter, height: diameter)
             color(for: health).setFill()
             NSBezierPath(ovalIn: rect).fill()
 

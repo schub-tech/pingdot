@@ -32,13 +32,22 @@ struct Stats {
 /// One target being pinged: its own probe, its own history, its own verdict.
 struct HostState {
     var host: String
+    /// Survives network changes, so the dots in the menu keep running.
     var recent: [Sample] = []
+    /// How many of `recent` were taken since the link last went down or came back.
+    var currentNetworkCount = 0
     var lastRTT: TimeInterval?
     var lastError: String?
     var health: Health = .unknown
 
+    /// The verdict only looks at these: replies from the old network say nothing
+    /// about the new one.
+    var onThisNetwork: ArraySlice<Sample> {
+        recent.suffix(currentNetworkCount)
+    }
+
     func stats(over count: Int = 60) -> Stats {
-        let samples = Array(recent.suffix(count))
+        let samples = Array(onThisNetwork.suffix(count))
         guard !samples.isEmpty else {
             return Stats(lossPercent: 0, average: nil, minimum: nil, maximum: nil, count: 0)
         }
@@ -105,15 +114,16 @@ final class NetworkMonitor {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.state.linkUp = path.status == .satisfied
+                let linkUp = path.status == .satisfied
+                if linkUp != self.state.linkUp {
+                    for index in self.state.hosts.indices {
+                        self.state.hosts[index].currentNetworkCount = 0
+                    }
+                }
+                self.state.linkUp = linkUp
                 // Prefer Wi‑Fi / Ethernet over VPN tunnels (utun…), which show up as `.other`.
                 let interfaces = path.availableInterfaces
                 self.state.interfaceName = (interfaces.first { $0.type != .other } ?? interfaces.first)?.name
-                if !self.state.linkUp {
-                    for index in self.state.hosts.indices {
-                        self.state.hosts[index].recent.removeAll()
-                    }
-                }
                 self.recompute()
             }
         }
@@ -134,7 +144,7 @@ final class NetworkMonitor {
             guard let self else { return }
             // Skip the warm-up after launch or a network change: the dot is yellow
             // until enough replies are in, which says nothing about the connection.
-            let warm = self.state.hosts.contains { $0.recent.count >= Settings.shared.greenWindow }
+            let warm = self.state.hosts.contains { $0.onThisNetwork.count >= Settings.shared.greenWindow }
             if warm || self.state.health == .red {
                 self.history.tick(health: self.state.health)
             }
@@ -200,6 +210,8 @@ final class NetworkMonitor {
         history.addProbe(host: state.hosts[index].host, ok: ok, rtt: rtt)
         let overflow = state.hosts[index].recent.count - Self.historyLimit
         if overflow > 0 { state.hosts[index].recent.removeFirst(overflow) }
+        state.hosts[index].currentNetworkCount = min(state.hosts[index].currentNetworkCount + 1,
+                                                     state.hosts[index].recent.count)
         if ok {
             state.hosts[index].lastRTT = rtt
             // A reply means any earlier setup problem (e.g. DNS) has sorted itself out.
@@ -233,11 +245,11 @@ final class NetworkMonitor {
         let diagnostics = state.diagnostics
 
         // Office networks often drop ICMP. If not a single ping has ever answered
-        // on this network (history is cleared on every link change) while HTTPS
+        // on this network (`onThisNetwork` restarts on every link change) while HTTPS
         // works, the internet is fine — red would be a false alarm. A real outage
         // has older successful pings in the history and stays red.
         if health == .red, diagnostics.tlsReachable == true,
-           state.hosts.allSatisfy({ !$0.recent.contains(where: \.ok) }) {
+           state.hosts.allSatisfy({ !$0.onThisNetwork.contains(where: \.ok) }) {
             return (.yellow, .pingBlocked)
         }
         if health == .green, diagnostics.dnsWorking == false { return (.yellow, .dnsFailing) }
@@ -260,10 +272,10 @@ final class NetworkMonitor {
 
     private func health(for host: HostState) -> Health {
         if !state.linkUp { return .red }
-        if host.lastError != nil && host.recent.isEmpty { return .unknown }
+        if host.lastError != nil && host.onThisNetwork.isEmpty { return .unknown }
 
         let settings = Settings.shared
-        let samples = host.recent
+        let samples = host.onThisNetwork
         guard !samples.isEmpty else { return .unknown }
 
         // Rule 1: N losses back to back means this target is gone.

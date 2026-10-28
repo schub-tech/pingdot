@@ -131,7 +131,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         // A setup problem (bad hostname, no ICMP socket) is worth surfacing.
         if let error = state.hosts.compactMap(\.lastError).first,
-           state.hosts.allSatisfy({ $0.recent.isEmpty }) {
+           state.hosts.allSatisfy({ $0.onThisNetwork.isEmpty }) {
             return error
         }
         return nil

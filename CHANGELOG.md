@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The dots in the menu keep running when the network changes. Only the colour
+  starts over, because replies from the old network say nothing about the new one.
+
 ## 0.1.2 — 2026-10-08
 
 - Fix: PingDot quit without a word when the network changed (Wi‑Fi switch,

@@ -36,7 +36,7 @@ green and the menu says *"8.8.8.8 unreachable — but you are online"*.
 
 ## Install
 
-**Mac App Store:** coming soon.
+**Mac App Store:** [PingDot on the App Store](https://apps.apple.com/app/pingdot-internet-status/id6820027450).
 
 **Homebrew:**
 

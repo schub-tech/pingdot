@@ -13,7 +13,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 CONFIG="${1:-release}"
-APP="$ROOT/build/PingDot.app"
+OUT="$ROOT/build/PingDot.app"
+# The repo may live in an iCloud-synced folder, where Finder info can reappear on
+# the bundle at any moment and make codesign fail. Assemble and sign outside of it.
+WORK="$(mktemp -d /tmp/pingdot-build.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+APP="$WORK/PingDot.app"
 SIGN_ID="${SIGN_ID:--}"   # "-" = ad-hoc
 ENTITLEMENTS="${ENTITLEMENTS:-$ROOT/Resources/PingDot.entitlements}"
 PROFILE="${PROFILE:-}"    # embedded.provisionprofile, App Store only
@@ -30,7 +35,6 @@ if [ ! -f "$ROOT/Resources/AppIcon.icns" ]; then
   swift "$ROOT/Scripts/make-icon.swift" >/dev/null
 fi
 
-rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PingDot"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
@@ -38,7 +42,7 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 [ -n "$PROFILE" ] && cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
 
-# Finder / iCloud Drive attach extended attributes that codesign refuses to sign.
+# Copied files can bring extended attributes along, which codesign refuses to sign.
 xattr -cr "$APP"
 
 # Ad-hoc builds stay unsandboxed on purpose: the sandbox needs a real signing
@@ -50,6 +54,10 @@ else
     --entitlements "$ENTITLEMENTS" "$APP"
 fi
 
-echo "✓ $APP"
-echo "  open $APP        # run it"
-echo "  cp -R $APP /Applications/   # install"
+rm -rf "$OUT"
+mkdir -p "$(dirname "$OUT")"
+ditto --noextattr --norsrc "$APP" "$OUT"
+
+echo "✓ $OUT"
+echo "  open $OUT        # run it"
+echo "  cp -R $OUT /Applications/   # install"

@@ -6,8 +6,6 @@
 
 <p align="center">
   <strong>A dot in your Mac's menu bar that tells you whether the internet works.</strong>
-  <br>
-  <a href="https://www.schub.tech/labs/pingdot/">schub.tech/labs/pingdot</a>
 </p>
 
 <p align="center">

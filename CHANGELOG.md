@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-31
 
+- *Connection history…* in the menu: the last 1, 6 or 24 hours as a chart —
+  latency, and when the connection was good, unstable or down. Hover for the
+  details of any minute. "How was the Wi‑Fi on the train?" now has an answer.
+  The history stays on your Mac (one small file, older than 24 hours is deleted).
 - The dots in the menu keep running when the network changes. Only the colour
   starts over, because replies from the old network say nothing about the new one.
 
